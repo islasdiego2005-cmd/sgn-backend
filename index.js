@@ -1,63 +1,60 @@
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const pool = require('./db');
 require('dotenv').config();
 
 const app = express();
 
-app.use(cors());
+const corsOptions = {
+    origin: ['https://sgn-frontend.onrender.com', 'http://localhost:5173'], 
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // LOGIN DE USUARIOS
 app.post('/api/auth/login', async (req, res) => {
-
     const { num_control, password } = req.body;
 
-    // Validación básica
     if (!num_control || !password) {
-        return res.status(400).json({
-            error: 'Por favor ingresa matrícula y contraseña.'
-        });
+        return res.status(400).json({ error: 'Por favor ingresa matrícula y contraseña.' });
     }
 
     try {
-        // Buscar usuario (Adaptado a PostgreSQL)
         const result = await pool.query(
-            `
-            SELECT *
-            FROM usuarios
-            WHERE num_control = $1
-            `,
+            'SELECT * FROM usuarios WHERE num_control = $1',
             [num_control]
         );
 
-        // Verificar existencia (En pg se usa rows.length)
         if (result.rows.length === 0) {
-            return res.status(404).json({
-                error: 'Usuario no encontrado.'
-            });
+            return res.status(404).json({ error: 'Usuario no encontrado.' });
         }
 
-        // Obtener el primer usuario (Adaptado a PostgreSQL)
         const usuario = result.rows[0];
-
-        // Comparar contraseña
-        const passwordCorrecta = await bcrypt.compare(
-            password,
-            usuario.password_hash
-        );
+        const passwordCorrecta = await bcrypt.compare(password, usuario.password_hash);
 
         if (!passwordCorrecta) {
-            return res.status(401).json({
-                error: 'Contraseña incorrecta.'
-            });
+            return res.status(401).json({ error: 'Contraseña incorrecta.' });
         }
+
+        // Creación del Gafete Virtual (Token)
+        const token = jwt.sign(
+            { 
+                num_control: usuario.num_control, 
+                rol: usuario.rol 
+            },
+            process.env.JWT_SECRET || 'llave_desarrollo_segura_2026',
+            { expiresIn: '8h' } 
+        );
 
         // Login exitoso
         res.json({
-            mensaje: 'Inicio de sesión exitoso ✅',
+            mensaje: 'Inicio de sesión exitoso',
+            token: token, 
             usuario: {
                 num_control: usuario.num_control,
                 nombre_completo: usuario.nombre_completo,
@@ -66,15 +63,9 @@ app.post('/api/auth/login', async (req, res) => {
         });
 
     } catch (err) {
-
         console.error('Error en login:', err);
-
-        res.status(500).json({
-            error: 'Error interno del servidor.'
-        });
-
+        res.status(500).json({ error: 'Error interno del servidor.' });
     }
-
 });
 
 app.get('/crear-admin', async (req, res) => {
