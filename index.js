@@ -699,34 +699,27 @@ app.post('/api/postulaciones/crear', async (req, res) => {
 });
 
 // 8. RUTA PARA VER QUÉ TRABAJADORES SE POSTULARON A UN NOMBRAMIENTO
-app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
-    const { id_nombramiento } = req.params;
-
-    try {
-
-        const result = await pool.query(`
-            SELECT
-                p.id_postulacion,
-                p.num_control,
-                COALESCE(u.nombre_completo, pa.nombre || ' ' || pa.apellido) AS nombre_completo,
-                c.puesto_requerido,
-                p.fecha_postulacion,
-                p.resultado
-            FROM postulaciones p
-            INNER JOIN convocatorias c ON p.id_convocatoria = c.id_convocatoria
-            LEFT JOIN usuarios u ON p.num_control = u.num_control
-            LEFT JOIN personal_apoyo pa ON p.num_control = pa.matricula
-            WHERE c.id_nombramiento = $1
-            ORDER BY p.fecha_postulacion ASC
-        `, [id_nombramiento]);
-
-        res.json(result.rows);
-
-    } catch (err) {
-        console.error("Error al obtener los postulados del nombramiento:", err);
-        res.status(500).json({ error: 'Error interno en el servidor: ' + err.message });
-    }
-});
+const result = await pool.query(`
+    SELECT
+        p.id_postulacion,
+        p.num_control,
+        COALESCE(
+            u.nombre_completo,
+            pa.nombre || ' ' || pa.apellido
+        ) AS nombre_completo,
+        c.puesto_requerido,
+        p.fecha_postulacion,
+        p.resultado
+    FROM postulaciones p
+    INNER JOIN convocatorias c
+        ON p.id_convocatoria = c.id_convocatoria
+    LEFT JOIN usuarios u
+        ON p.num_control = u.num_control
+    LEFT JOIN personal_apoyo pa
+        ON p.num_control::integer = pa.matricula
+    WHERE c.id_nombramiento = $1
+    ORDER BY p.fecha_postulacion ASC
+`, [id_nombramiento]);
 // ========================================================
 // RUTA PARA ELIMINAR UN TRABAJADOR (BORRADO LÓGICO)
 // ========================================================
