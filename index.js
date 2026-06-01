@@ -699,6 +699,7 @@ app.post('/api/postulaciones/crear', async (req, res) => {
 });
 
 // 8. RUTA PARA VER QUÉ TRABAJADORES SE POSTULARON A UN NOMBRAMIENTO (CORREGIDA)
+// 8. RUTA PARA VER QUÉ TRABAJADORES SE POSTULARON A UN NOMBRAMIENTO (CORREGIDA SIN ERROR DE CASTEO)
 app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
     const { id_nombramiento } = req.params;
 
@@ -720,18 +721,17 @@ app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
             LEFT JOIN usuarios u
                 ON p.num_control = u.num_control
             LEFT JOIN personal_apoyo pa
-                ON p.num_control::integer = pa.matricula
+                ON p.num_control = pa.matricula::text -- Convertimos el número a texto de forma segura
             WHERE c.id_nombramiento = $1
             ORDER BY p.fecha_postulacion ASC
         `, [id_nombramiento]);
 
         res.json(result.rows);
     } catch (err) {
-        console.error("Error al obtener postulados:", err);
-        res.status(500).json({ error: "Error interno del servidor." });
+        console.error("Error crítico al obtener postulados:", err);
+        res.status(500).json({ error: "Error interno del servidor.", detalle: err.message });
     }
 });
-
 
 // ========================================================
 // RUTA PARA ELIMINAR UN TRABAJADOR (BORRADO LÓGICO)
