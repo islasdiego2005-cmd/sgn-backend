@@ -698,8 +698,8 @@ app.post('/api/postulaciones/crear', async (req, res) => {
     }
 });
 // 8. RUTA PARA VER QUÉ TRABAJADORES SE POSTULARON A UN NOMBRAMIENTO (SOLUCIÓN DEFINITIVA)
+// 8. RUTA PARA VER QUÉ TRABAJADORES SE POSTULARON A UN NOMBRAMIENTO (CORREGIDA SIN ERROR DE COLUMNA)
 app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
-    // Forzamos la conversión a entero para el WHERE de la convocatoria
     const id_nombramiento = parseInt(req.params.id_nombramiento, 10);
 
     if (isNaN(id_nombramiento)) {
@@ -713,7 +713,13 @@ app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
                 p.num_control,
                 COALESCE(
                     u.nombre_completo,
-                    CONCAT(pa.nombre, ' ', pa.apellido)
+                    CONCAT(
+                        pa.nombre, 
+                        ' ', 
+                        COALESCE(pa.apellido_paterno, ''), 
+                        ' ', 
+                        COALESCE(pa.apellido_materno, '')
+                    )
                 ) AS nombre_completo,
                 c.puesto_requerido,
                 p.fecha_postulacion,
@@ -722,9 +728,9 @@ app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
             INNER JOIN convocatorias c 
                 ON p.id_convocatoria = c.id_convocatoria
             LEFT JOIN usuarios u 
-                ON p.num_control::text = u.num_control::text -- Blindaje: por si usuarios usa VARCHAR
+                ON p.num_control::text = u.num_control::text
             LEFT JOIN personal_apoyo pa 
-                ON p.num_control::text = pa.matricula::text  -- Aquí se destruye el error 'character varying = integer'
+                ON p.num_control::text = pa.matricula::text
             WHERE c.id_nombramiento = $1
             ORDER BY p.id_postulacion ASC
         `, [id_nombramiento]);
@@ -738,7 +744,6 @@ app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
         });
     }
 });
-
 // ========================================================
 // RUTA PARA ELIMINAR UN TRABAJADOR (BORRADO LÓGICO)
 // ========================================================
