@@ -1147,12 +1147,3 @@ app.delete('/api/especialidades/:id', async (req, res) => {
 
     }
 });
-
-router.get('/api/hora-servidor', (req, res) => {
-    const ahora = new Date();
-    res.json({
-        horaActual: ahora.getHours(),
-        minutoActual: ahora.getMinutes(),
-        fechaISO: ahora.toISOString().split('T')[0] // YYYY-MM-DD
-    });
-});
