@@ -1076,3 +1076,74 @@ app.put('/api/nombramientos/:id', async (req, res) => {
     }
 
 });
+
+app.get('/api/especialidades', async (req, res) => {
+    try {
+
+        const result = await pool.query(`
+            SELECT *
+            FROM especialidades
+            WHERE activo = true
+            ORDER BY nombre
+        `);
+
+        res.json(result.rows);
+
+    } catch (err) {
+
+        console.error(err);
+
+        res.status(500).json({
+            error: 'Error obteniendo especialidades'
+        });
+
+    }
+});
+
+app.post('/api/especialidades', async (req, res) => {
+
+    const { nombre } = req.body;
+
+    try {
+
+        const result = await pool.query(`
+            INSERT INTO especialidades(nombre)
+            VALUES($1)
+            RETURNING *
+        `,[nombre]);
+
+        res.json(result.rows[0]);
+
+    } catch(err){
+
+        res.status(500).json({
+            error: err.message
+        });
+
+    }
+});
+
+app.delete('/api/especialidades/:id', async (req, res) => {
+
+    try {
+
+        await pool.query(`
+            UPDATE especialidades
+            SET activo = false
+            WHERE id_especialidad = $1
+        `, [req.params.id]);
+
+        res.json({
+            mensaje: 'Especialidad eliminada'
+        });
+
+    } catch (err) {
+
+        console.error(err);
+
+        res.status(500).json({
+            error: err.message
+        });
+
+    }
+});
