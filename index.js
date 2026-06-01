@@ -161,22 +161,25 @@ app.get('/api/trabajadores/:num_control/cursos', async (req, res) => {
 });
 
 //  RUTA PARA OBTENER EL PERSONAL DE APOYO
-app.get('/api/apoyo', async (req, res) => {
+app.get('/api/test-apoyo', async (req, res) => {
     try {
-        // Unimos nombre y apellido 
+
         const result = await pool.query(`
-    SELECT 
-        matricula AS num_control, 
-        (nombre || ' ' || apellido) AS nombre_completo, 
-        estatus, cursos, telefono, correo, rol 
-    FROM personal_apoyo -- <--- ¿Esta tabla existe realmente?
-    WHERE estatus = 'Apto'
-`);
+            SELECT *
+            FROM personal_apoyo
+            LIMIT 1
+        `);
 
         res.json(result.rows);
+
     } catch (err) {
-        console.error("Error al obtener personal de apoyo:", err);
-        res.status(500).send("Error interno del servidor");
+
+        console.error(err);
+
+        res.status(500).json({
+            error: err.message
+        });
+
     }
 });
 
