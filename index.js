@@ -165,17 +165,13 @@ app.get('/api/apoyo', async (req, res) => {
     try {
         // Unimos nombre y apellido 
         const result = await pool.query(`
-            SELECT 
-                matricula AS num_control, 
-                (nombre || ' ' || apellido) AS nombre_completo, 
-                estatus, 
-                cursos, 
-                telefono,
-                correo,
-                rol 
-            FROM personal_apoyo 
-            WHERE estatus = 'Apto'
-        `);
+    SELECT 
+        matricula AS num_control, 
+        (nombre || ' ' || apellido) AS nombre_completo, 
+        estatus, cursos, telefono, correo, rol 
+    FROM personal_apoyo -- <--- ¿Esta tabla existe realmente?
+    WHERE estatus = 'Apto'
+`);
 
         res.json(result.rows);
     } catch (err) {
@@ -206,7 +202,7 @@ app.get('/api/nombramientos', async (req, res) => {
             LEFT JOIN detalle_nombramiento d ON n.id_nombramiento = d.id_nombramiento
 	    ORDER BY n.id_nombramiento DESC
         `);
-       
+
 
         const nombramientosAgrupados = [];
 
@@ -480,7 +476,7 @@ app.post('/api/auth/recuperar-password', async (req, res) => {
 // GUARDAR RESULTADOS DEL LLAMADO 
 // ========================================================
 app.put('/api/postulaciones/resultado', async (req, res) => {
-    const { id_nombramiento, seleccionados } = req.body; 
+    const { id_nombramiento, seleccionados } = req.body;
 
     if (!id_nombramiento) {
         return res.status(400).json({ error: 'Falta el ID del nombramiento.' });
@@ -796,8 +792,8 @@ app.put('/api/nombramientos/:id/llamado', async (req, res) => {
 // ========================================================
 app.put('/api/nombramientos/:id/ampliar', async (req, res) => {
     const { id } = req.params;
-    const { minutos } = req.body; 
-    
+    const { minutos } = req.body;
+
     if (!minutos || isNaN(minutos)) {
         return res.status(400).json({ error: 'Debes enviar una cantidad de minutos válida.' });
     }
@@ -805,7 +801,7 @@ app.put('/api/nombramientos/:id/ampliar', async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        
+
         // Sumar el tiempo a la fecha de cierre y asegurar que vuelva a estar 'Abierta'
         await client.query(`
             UPDATE nombramientos 
