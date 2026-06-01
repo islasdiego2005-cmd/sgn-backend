@@ -697,12 +697,11 @@ app.post('/api/postulaciones/crear', async (req, res) => {
         return res.status(500).json({ error: 'Error interno en el servidor: ' + err.message });
     }
 });
-// 8. RUTA PARA VER QUÉ TRABAJADORES SE POSTULARON A UN NOMBRAMIENTO (CORREGIDA CON PARSEINT)
+// 8. RUTA PARA VER QUÉ TRABAJADORES SE POSTULARON A UN NOMBRAMIENTO (SOLUCIÓN DEFINITIVA)
 app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
-    // Forzamos la conversión del parámetro de la URL de String a Integer
+    // Forzamos la conversión a entero para el WHERE de la convocatoria
     const id_nombramiento = parseInt(req.params.id_nombramiento, 10);
 
-    // Validación por si acaso llega algo que no sea un número
     if (isNaN(id_nombramiento)) {
         return res.status(400).json({ error: "El ID del nombramiento debe ser un número válido." });
     }
@@ -723,12 +722,12 @@ app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
             INNER JOIN convocatorias c 
                 ON p.id_convocatoria = c.id_convocatoria
             LEFT JOIN usuarios u 
-                ON p.num_control = u.num_control
+                ON p.num_control::text = u.num_control::text -- Blindaje: por si usuarios usa VARCHAR
             LEFT JOIN personal_apoyo pa 
-                ON p.num_control = pa.matricula
+                ON p.num_control::text = pa.matricula::text  -- Aquí se destruye el error 'character varying = integer'
             WHERE c.id_nombramiento = $1
             ORDER BY p.id_postulacion ASC
-        `, [id_nombramiento]); // Aquí ya entra como un entero nativo de JavaScript
+        `, [id_nombramiento]);
 
         res.json(result.rows);
     } catch (err) {
