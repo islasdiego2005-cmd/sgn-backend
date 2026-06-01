@@ -1,60 +1,63 @@
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const pool = require('./db');
 require('dotenv').config();
 
 const app = express();
 
-const corsOptions = {
-    origin: ['https://sgn-frontend.onrender.com', 'http://localhost:5173'], 
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true
-};
-app.use(cors(corsOptions));
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // LOGIN DE USUARIOS
 app.post('/api/auth/login', async (req, res) => {
+
     const { num_control, password } = req.body;
 
+    // Validación básica
     if (!num_control || !password) {
-        return res.status(400).json({ error: 'Por favor ingresa matrícula y contraseña.' });
+        return res.status(400).json({
+            error: 'Por favor ingresa matrícula y contraseña.'
+        });
     }
 
     try {
+        // Buscar usuario (Adaptado a PostgreSQL)
         const result = await pool.query(
-            'SELECT * FROM usuarios WHERE num_control = $1',
+            `
+            SELECT *
+            FROM usuarios
+            WHERE num_control = $1
+            `,
             [num_control]
         );
 
+        // Verificar existencia (En pg se usa rows.length)
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Usuario no encontrado.' });
+            return res.status(404).json({
+                error: 'Usuario no encontrado.'
+            });
         }
 
+        // Obtener el primer usuario (Adaptado a PostgreSQL)
         const usuario = result.rows[0];
-        const passwordCorrecta = await bcrypt.compare(password, usuario.password_hash);
+
+        // Comparar contraseña
+        const passwordCorrecta = await bcrypt.compare(
+            password,
+            usuario.password_hash
+        );
 
         if (!passwordCorrecta) {
-            return res.status(401).json({ error: 'Contraseña incorrecta.' });
+            return res.status(401).json({
+                error: 'Contraseña incorrecta.'
+            });
         }
-
-        // Creación del Gafete Virtual (Token)
-        const token = jwt.sign(
-            { 
-                num_control: usuario.num_control, 
-                rol: usuario.rol 
-            },
-            process.env.JWT_SECRET || 'llave_desarrollo_segura_2026',
-            { expiresIn: '8h' } 
-        );
 
         // Login exitoso
         res.json({
             mensaje: 'Inicio de sesión exitoso',
-            token: token, 
             usuario: {
                 num_control: usuario.num_control,
                 nombre_completo: usuario.nombre_completo,
@@ -63,9 +66,15 @@ app.post('/api/auth/login', async (req, res) => {
         });
 
     } catch (err) {
+
         console.error('Error en login:', err);
-        res.status(500).json({ error: 'Error interno del servidor.' });
+
+        res.status(500).json({
+            error: 'Error interno del servidor.'
+        });
+
     }
+
 });
 
 app.get('/crear-admin', async (req, res) => {
@@ -151,6 +160,29 @@ app.get('/api/trabajadores/:num_control/cursos', async (req, res) => {
     }
 });
 
+//  RUTA PARA OBTENER EL PERSONAL DE APOYO
+app.get('/api/apoyo', async (req, res) => {
+    try {
+        // Unimos nombre y apellido 
+        const result = await pool.query(`
+            SELECT 
+                matricula AS num_control, 
+                (nombre || ' ' || apellido) AS nombre_completo, 
+                estatus, 
+                cursos, 
+                telefono,
+                correo,
+                rol 
+            FROM personal_apoyo 
+            WHERE estatus = 'Apto'
+        `);
+
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error al obtener personal de apoyo:", err);
+        res.status(500).send("Error interno del servidor");
+    }
+});
 
 // 1. RUTA PARA VER LOS NOMBRAMIENTOS CON SUS DETALLES REALES (CORREGIDA)
 app.get('/api/nombramientos', async (req, res) => {
@@ -172,7 +204,9 @@ app.get('/api/nombramientos', async (req, res) => {
                 d.cantidad
             FROM nombramientos n
             LEFT JOIN detalle_nombramiento d ON n.id_nombramiento = d.id_nombramiento
+	    ORDER BY n.id_nombramiento DESC
         `);
+       
 
         const nombramientosAgrupados = [];
 
@@ -210,6 +244,7 @@ app.get('/api/nombramientos', async (req, res) => {
         res.status(500).send(err.message);
     }
 });
+
 
 // 5. RUTA PARA CREAR NOMBRAMIENTO Y SUS CONVOCATORIAS (COLUMNAS CORREGIDAS)
 app.post('/api/nombramientos/crear', async (req, res) => {
@@ -263,8 +298,11 @@ app.post('/api/nombramientos/crear', async (req, res) => {
 // 2. RUTA PARA TRAER LOS TRABAJADORES A LA TABLA REACT
 app.get('/api/trabajadores', async (req, res) => {
     try {
-        const result = await pool.query("SELECT num_control, nombre_completo, estatus, cursos FROM usuarios WHERE rol = 'Trabajador'");
-
+        const result = await pool.query(`
+            SELECT num_control, nombre_completo, nombre, apellido_paterno, apellido_materno, estatus, cursos 
+            FROM usuarios 
+            WHERE rol = 'Trabajador'
+        `);
         res.json(result.rows);
     } catch (err) {
         console.error("Error al obtener trabajadores:", err);
@@ -274,35 +312,28 @@ app.get('/api/trabajadores', async (req, res) => {
 
 // 3. RUTA PARA REGISTRAR TRABAJADORES / USUARIOS
 app.post('/api/auth/register', async (req, res) => {
-    const { num_control, nombre_completo, rol, password, cursos } = req.body;
+    const { num_control, nombre_completo, nombre, apellido_paterno, apellido_materno, rol, password, cursos } = req.body;
 
     if (!num_control || !nombre_completo || !rol || !password) {
         return res.status(400).json({ error: 'Por favor, ingresa todos los campos obligatorios.' });
     }
 
     try {
-
-        const usuarioExistente = await pool.query(
-            'SELECT * FROM usuarios WHERE num_control = $1',
-            [num_control]
-        );
-
+        const usuarioExistente = await pool.query('SELECT * FROM usuarios WHERE num_control = $1', [num_control]);
         if (usuarioExistente.rows.length > 0) {
             return res.status(400).json({ error: 'La matricula o numero de control ya esta registrado.' });
         }
 
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(password, salt);
-
         const cursosTexto = cursos && cursos.length > 0 ? cursos.join(', ') : 'Ninguno';
 
         await pool.query(`
-            INSERT INTO usuarios (num_control, nombre_completo, rol, password_hash, estatus, cursos) 
-            VALUES ($1, $2, $3, $4, $5, $6)
-        `, [num_control, nombre_completo, rol, passwordHash, 'Apto', cursosTexto]);
+            INSERT INTO usuarios (num_control, nombre_completo, nombre, apellido_paterno, apellido_materno, rol, password_hash, estatus, cursos) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [num_control, nombre_completo, nombre, apellido_paterno, apellido_materno, rol, passwordHash, 'Apto', cursosTexto]);
 
-        res.status(201).json({ mensaje: 'Usuario registrado exitosamente con contrasena segura.' });
-
+        res.status(201).json({ mensaje: 'Usuario registrado exitosamente.' });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Error en el servidor: ' + err.message });
@@ -312,24 +343,25 @@ app.post('/api/auth/register', async (req, res) => {
 // 4. RUTA PARA ACTUALIZAR LOS DATOS DE UN TRABAJADOR
 app.put('/api/trabajadores/:num_control', async (req, res) => {
     const { num_control } = req.params;
-    const { nombre_completo, estatus, cursos } = req.body;
+    const { nombre_completo, nombre, apellido_paterno, apellido_materno, estatus, cursos } = req.body;
 
     if (!nombre_completo || !estatus) {
         return res.status(400).json({ error: 'El nombre completo y el estatus son obligatorios.' });
     }
 
     try {
-
-        // Estructura de parámetros planos ($1, $2, $3, $4) para Postgres
         await pool.query(`
             UPDATE usuarios 
             SET nombre_completo = $1, 
-                estatus = $2, 
-                cursos = $3 
-            WHERE num_control = $4
-        `, [nombre_completo, estatus, cursos, num_control]);
+                nombre = $2,
+                apellido_paterno = $3,
+                apellido_materno = $4,
+                estatus = $5, 
+                cursos = $6 
+            WHERE num_control = $7
+        `, [nombre_completo, nombre, apellido_paterno, apellido_materno, estatus, cursos, num_control]);
 
-        res.json({ mensaje: 'Trabajador actualizado con exito en la base de datos. Portuario al dia.' });
+        res.json({ mensaje: 'Trabajador actualizado con exito en la base de datos.' });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Error en el servidor al actualizar: ' + err.message });
@@ -443,13 +475,15 @@ app.post('/api/auth/recuperar-password', async (req, res) => {
     }
 });
 
-// GUARDAR RESULTADOS DEL LLAMADO
-// GUARDAR RESULTADOS DE FORMA DIRECTA Y SEGURA (BACKEND)
+
+// ========================================================
+// GUARDAR RESULTADOS DEL LLAMADO 
+// ========================================================
 app.put('/api/postulaciones/resultado', async (req, res) => {
-    const { id_nombramiento, seleccionados } = req.body; // <--- LEEMOS EL ID DIRECTO
+    const { id_nombramiento, seleccionados } = req.body; 
 
     if (!id_nombramiento) {
-        return res.status(400).json({ error: 'Falta el ID del nombramiento para proceder al cierre.' });
+        return res.status(400).json({ error: 'Falta el ID del nombramiento.' });
     }
 
     if (!seleccionados || seleccionados.length === 0) {
@@ -461,7 +495,7 @@ app.put('/api/postulaciones/resultado', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 1. RECHAZAR TODOS LOS QUE SE QUEDARON EN 'PENDIENTE' EN ESTE NOMBRAMIENTO
+        // 1. RECHAZAMOS A LOS QUE NO FUERON SELECCIONADOS EN ESTA RONDA (Los que siguen en Pendiente)
         await client.query(`
             UPDATE postulaciones p
             SET resultado = 'Rechazado'
@@ -471,9 +505,8 @@ app.put('/api/postulaciones/resultado', async (req, res) => {
             AND p.resultado = 'Pendiente'
         `, [id_nombramiento]);
 
-        // 2. REGISTRAR O ACTUALIZAR LOS ASIGNADOS (Aceptados)
+        // 2. ACTUALIZAMOS O INSERTAMOS A LOS SELECCIONADOS COMO 'Llamado'
         for (const trabajador of seleccionados) {
-            // Buscamos si el trabajador ya tenía postulación previa en este nombramiento
             const existePostulacion = await client.query(`
                 SELECT p.id_postulacion 
                 FROM postulaciones p
@@ -485,14 +518,13 @@ app.put('/api/postulaciones/resultado', async (req, res) => {
             `, [id_nombramiento, trabajador.num_control, trabajador.puesto]);
 
             if (existePostulacion.rows.length > 0) {
-                // Si ya estaba postulado, actualizamos a Aceptado
                 await client.query(`
                     UPDATE postulaciones 
-                    SET resultado = 'Aceptado' 
+                    SET resultado = 'Llamado' 
                     WHERE id_postulacion = $1
                 `, [existePostulacion.rows[0].id_postulacion]);
             } else {
-                // ¡SI ERA UN TRABAJADOR EXTRA! Le creamos su registro de postulación directamente como Aceptado
+                // Si es Extra o de Apoyo (No existía en postulaciones)
                 const convResult = await client.query(`
                     SELECT id_convocatoria FROM convocatorias 
                     WHERE id_nombramiento = $1 AND puesto_requerido = $2
@@ -502,33 +534,19 @@ app.put('/api/postulaciones/resultado', async (req, res) => {
                 if (convResult.rows.length > 0) {
                     await client.query(`
                         INSERT INTO postulaciones (id_convocatoria, num_control, fecha_postulacion, resultado)
-                        VALUES ($1, $2, NOW(), 'Aceptado')
+                        VALUES ($1, $2, NOW(), 'Llamado')
                     `, [convResult.rows[0].id_convocatoria, trabajador.num_control]);
                 }
             }
         }
 
-        // 3. ACTUALIZAR EL ESTADO DEL NOMBRAMIENTO EN LA BASE DE DATOS
-        await client.query(`
-            UPDATE nombramientos
-            SET estado = 'Publicado'
-            WHERE id_nombramiento = $1
-        `, [id_nombramiento]);
-
-        // 4. CERRAR LAS CONVOCATORIAS ASOCIADAS
-        await client.query(`
-            UPDATE convocatorias
-            SET estatus = 'Cerrada'
-            WHERE id_nombramiento = $1
-        `, [id_nombramiento]);
-
         await client.query('COMMIT');
-        res.json({ mensaje: 'Resultados guardados y tarjeta cerrada exitosamente.' });
+        res.json({ mensaje: 'Personal llamado exitosamente. Proceda a confirmar asistencia en Recepción.' });
 
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error("Error crítico guardando asignaciones:", err);
-        res.status(500).json({ error: 'Error al procesar el cierre en la base de datos.' });
+        console.error("Error crítico guardando llamados:", err);
+        res.status(500).json({ error: 'Error al procesar el llamado en la base de datos.' });
     } finally {
         client.release();
     }
@@ -661,18 +679,18 @@ app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
     const { id_nombramiento } = req.params;
 
     try {
-
         const result = await pool.query(`
             SELECT 
                 p.id_postulacion,
                 p.num_control,
-                u.nombre_completo,
+                COALESCE(u.nombre_completo, pa.nombre || ' ' || pa.apellido) AS nombre_completo,
                 c.puesto_requerido,
                 p.fecha_postulacion,
                 p.resultado
             FROM postulaciones p
             INNER JOIN convocatorias c ON p.id_convocatoria = c.id_convocatoria
-            INNER JOIN usuarios u ON p.num_control = u.num_control
+            LEFT JOIN usuarios u ON p.num_control = u.num_control
+            LEFT JOIN personal_apoyo pa ON p.num_control = pa.matricula
             WHERE c.id_nombramiento = $1
             ORDER BY p.fecha_postulacion ASC
         `, [id_nombramiento]);
@@ -683,44 +701,25 @@ app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
         res.status(500).json({ error: 'Error interno en el servidor: ' + err.message });
     }
 });
-
 // ========================================================
-// RUTA PARA ELIMINAR UN TRABAJADOR
+// RUTA PARA ELIMINAR UN TRABAJADOR (BORRADO LÓGICO)
 // ========================================================
 app.delete('/api/trabajadores/:num_control', async (req, res) => {
     const { num_control } = req.params;
-
-    const client = await pool.connect();
-
     try {
-        await client.query('BEGIN');
-
-        // 1. Eliminar postulaciones del usuario primero
-        await client.query(
-            'DELETE FROM postulaciones WHERE num_control = $1',
+        const result = await pool.query(
+            "UPDATE usuarios SET estatus = 'Dado de baja' WHERE num_control = $1",
             [num_control]
         );
 
-        // 2. Eliminar el usuario
-        const result = await client.query(
-            'DELETE FROM usuarios WHERE num_control = $1',
-            [num_control]
-        );
-
-        await client.query('COMMIT');
-
-        // En pg se utiliza rowCount para verificar filas afectadas
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Trabajador no encontrado.' });
         }
 
-        res.json({ mensaje: 'Trabajador eliminado correctamente.' });
+        res.json({ mensaje: 'Trabajador dado de baja correctamente (Borrado lógico).' });
     } catch (err) {
-        await client.query('ROLLBACK');
-        console.error("Error al eliminar:", err);
-        res.status(500).json({ error: 'Error al eliminar: ' + err.message });
-    } finally {
-        client.release();
+        console.error("Error al dar de baja:", err);
+        res.status(500).json({ error: 'Error al dar de baja: ' + err.message });
     }
 });
 
@@ -790,6 +789,98 @@ app.put('/api/nombramientos/:id/llamado', async (req, res) => {
         console.error(error);
         res.status(500).json({ error: "Error al procesar el llamado" });
     }
+});
+
+// ========================================================
+// RUTA PARA AMPLIAR EL TIEMPO DE LA CONVOCATORIA (VARIABLE)
+// ========================================================
+app.put('/api/nombramientos/:id/ampliar', async (req, res) => {
+    const { id } = req.params;
+    const { minutos } = req.body; 
+    
+    if (!minutos || isNaN(minutos)) {
+        return res.status(400).json({ error: 'Debes enviar una cantidad de minutos válida.' });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        // Sumar el tiempo a la fecha de cierre y asegurar que vuelva a estar 'Abierta'
+        await client.query(`
+            UPDATE nombramientos 
+            SET fecha_cierre = fecha_cierre + ($1 || ' minutes')::interval,
+                estado = 'Abierta'
+            WHERE id_nombramiento = $2
+        `, [minutos, id]);
+
+        // Reactivar las convocatorias hijas
+        await client.query(`
+            UPDATE convocatorias
+            SET estatus = 'Abierta'
+            WHERE id_nombramiento = $1
+        `, [id]);
+
+        await client.query('COMMIT');
+        res.json({ mensaje: `Convocatoria ampliada exitosamente por ${minutos} minutos.` });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("Error al ampliar convocatoria:", err);
+        res.status(500).json({ error: 'Error en la Base de Datos al ampliar el tiempo.' });
+    } finally {
+        client.release();
+    }
+});
+
+// ========================================================
+// RUTA PARA ASIGNAR A UN TRABAJADOR (CONFIRMAR ASISTENCIA)
+// ========================================================
+app.put('/api/postulaciones/asignar', async (req, res) => {
+    const { id_nombramiento, num_control, puesto } = req.body;
+
+    try {
+        await pool.query(`
+            UPDATE postulaciones p
+            SET resultado = 'Asignado'
+            FROM convocatorias c
+            WHERE p.id_convocatoria = c.id_convocatoria
+            AND c.id_nombramiento = $1
+            AND p.num_control = $2
+            AND c.puesto_requerido = $3
+        `, [id_nombramiento, num_control, puesto]);
+
+        res.json({ mensaje: 'Trabajador marcado como Asignado correctamente.' });
+    } catch (err) {
+        console.error("Error al asignar:", err);
+        res.status(500).json({ error: 'Error en la base de datos al asignar vacante.' });
+    }
+});
+
+// ========================================================
+// RUTA PARA APLICAR BRINCO (MARCAR COMO AUSENTE)
+// ========================================================
+app.put('/api/postulaciones/ausente', async (req, res) => {
+    const { id_nombramiento, num_control } = req.body;
+
+    try {
+        await pool.query(`
+            UPDATE postulaciones p
+            SET resultado = 'Ausente'
+            FROM convocatorias c
+            WHERE p.id_convocatoria = c.id_convocatoria
+            AND c.id_nombramiento = $1
+            AND p.num_control = $2
+        `, [id_nombramiento, num_control]);
+
+        res.json({ mensaje: 'Trabajador marcado como Ausente (Brinco).' });
+    } catch (err) {
+        console.error("Error al aplicar brinco:", err);
+        res.status(500).json({ error: 'Error en la base de datos al aplicar el brinco.' });
+    }
+});
+
+app.get('/api/hora-servidor', (req, res) => {
+    res.json({ hora_servidor: new Date().toISOString() });
 });
 
 // LEVANTAMIENTO DEL SERVIDOR
