@@ -309,25 +309,6 @@ app.post('/api/nombramientos/crear', async (req, res) => {
     }
 });
 
-//CREAR NOMBRAMIENTO
-
-app.post('/api/nombramientos/crear', async (req, res) => {
-    // ... todo tu código aquí adentro ...
-    
-    const client = await pool.connect();
-    try {
-        await client.query('BEGIN');
-        // ... tu lógica ...
-        await client.query('COMMIT');
-        res.status(201).json({ mensaje: 'Éxito' });
-    } catch (err) {
-        await client.query('ROLLBACK');
-        res.status(500).json({ error: err.message });
-    } finally {
-        client.release();
-    }
-}); 
-
 // BORRAR DESTINO
 app.delete('/api/destinos/:id', async (req, res) => {
     try {
@@ -722,8 +703,9 @@ app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
     const { id_nombramiento } = req.params;
 
     try {
+
         const result = await pool.query(`
-            SELECT 
+            SELECT
                 p.id_postulacion,
                 p.num_control,
                 COALESCE(u.nombre_completo, pa.nombre || ' ' || pa.apellido) AS nombre_completo,
@@ -739,6 +721,7 @@ app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
         `, [id_nombramiento]);
 
         res.json(result.rows);
+
     } catch (err) {
         console.error("Error al obtener los postulados del nombramiento:", err);
         res.status(500).json({ error: 'Error interno en el servidor: ' + err.message });
