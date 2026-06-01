@@ -697,11 +697,15 @@ app.post('/api/postulaciones/crear', async (req, res) => {
         return res.status(500).json({ error: 'Error interno en el servidor: ' + err.message });
     }
 });
-
-// 8. RUTA PARA VER QUÉ TRABAJADORES SE POSTULARON A UN NOMBRAMIENTO (CORREGIDA)
-// 8. RUTA PARA VER QUÉ TRABAJADORES SE POSTULARON A UN NOMBRAMIENTO (CORREGIDA SIN ERROR DE CASTEO)
+// 8. RUTA PARA VER QUÉ TRABAJADORES SE POSTULARON A UN NOMBRAMIENTO (CORREGIDA CON PARSEINT)
 app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
-    const { id_nombramiento } = req.params;
+    // Forzamos la conversión del parámetro de la URL de String a Integer
+    const id_nombramiento = parseInt(req.params.id_nombramiento, 10);
+
+    // Validación por si acaso llega algo que no sea un número
+    if (isNaN(id_nombramiento)) {
+        return res.status(400).json({ error: "El ID del nombramiento debe ser un número válido." });
+    }
 
     try {
         const result = await pool.query(`
@@ -710,26 +714,29 @@ app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
                 p.num_control,
                 COALESCE(
                     u.nombre_completo,
-                    pa.nombre || ' ' || pa.apellido
+                    CONCAT(pa.nombre, ' ', pa.apellido)
                 ) AS nombre_completo,
                 c.puesto_requerido,
                 p.fecha_postulacion,
                 p.resultado
             FROM postulaciones p
-            INNER JOIN convocatorias c
+            INNER JOIN convocatorias c 
                 ON p.id_convocatoria = c.id_convocatoria
-            LEFT JOIN usuarios u
+            LEFT JOIN usuarios u 
                 ON p.num_control = u.num_control
-            LEFT JOIN personal_apoyo pa
-                ON p.num_control = pa.matricula::text -- Convertimos el número a texto de forma segura
+            LEFT JOIN personal_apoyo pa 
+                ON p.num_control = pa.matricula
             WHERE c.id_nombramiento = $1
-            ORDER BY p.fecha_postulacion ASC
-        `, [id_nombramiento]);
+            ORDER BY p.id_postulacion ASC
+        `, [id_nombramiento]); // Aquí ya entra como un entero nativo de JavaScript
 
         res.json(result.rows);
     } catch (err) {
         console.error("Error crítico al obtener postulados:", err);
-        res.status(500).json({ error: "Error interno del servidor.", detalle: err.message });
+        res.status(500).json({ 
+            error: "Error interno del servidor.", 
+            detalle: err.message 
+        });
     }
 });
 
