@@ -161,20 +161,19 @@ app.get('/api/trabajadores/:num_control/cursos', async (req, res) => {
 });
 
 //  RUTA PARA OBTENER EL PERSONAL DE APOYO
-app.get('/api/test-apoyo', async (req, res) => {
+app.get('/api/apoyo', async (req, res) => {
     try {
 
         const result = await pool.query(`
             SELECT *
             FROM personal_apoyo
-            LIMIT 1
         `);
 
         res.json(result.rows);
 
     } catch (err) {
 
-        console.error(err);
+        console.error("ERROR APOYO:", err);
 
         res.status(500).json({
             error: err.message
