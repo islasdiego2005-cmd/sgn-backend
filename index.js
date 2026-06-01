@@ -160,25 +160,27 @@ app.get('/api/trabajadores/:num_control/cursos', async (req, res) => {
     }
 });
 
-//  RUTA PARA OBTENER EL PERSONAL DE APOYO
+// RUTA PARA OBTENER EL PERSONAL DE APOYO (TODOS)
 app.get('/api/apoyo', async (req, res) => {
     try {
-
         const result = await pool.query(`
-            SELECT *
-            FROM personal_apoyo
+            SELECT 
+                matricula AS num_control, 
+                (nombre || ' ' || apellido_paterno || ' ' || COALESCE(apellido_materno, '')) AS nombre_completo, 
+                nombre,
+                apellido_paterno,
+                apellido_materno,
+                estatus, 
+                cursos, 
+                telefono,
+                correo,
+                rol 
+            FROM personal_apoyo 
         `);
-
         res.json(result.rows);
-
     } catch (err) {
-
-        console.error("ERROR APOYO:", err);
-
-        res.status(500).json({
-            error: err.message
-        });
-
+        console.error("Error al obtener personal de apoyo:", err);
+        res.status(500).send("Error interno del servidor");
     }
 });
 
@@ -204,7 +206,7 @@ app.get('/api/nombramientos', async (req, res) => {
             LEFT JOIN detalle_nombramiento d ON n.id_nombramiento = d.id_nombramiento
 	    ORDER BY n.id_nombramiento DESC
         `);
-
+       
 
         const nombramientosAgrupados = [];
 
@@ -252,6 +254,34 @@ app.post('/api/nombramientos/crear', async (req, res) => {
         return res.status(400).json({ error: 'Faltan datos obligatorios para crear el nombramiento.' });
     }
 
+     // VALIDACIÓN DE HORARIOS POR TURNO (Control de Horas)
+    // ==========================================================
+    // Extraemos los caracteres de la hora directamente del texto recibido
+    let horaExacta = "";
+    if (fecha_carga && fecha_carga.includes('T')) {
+        // Si viene en formato ISO (Ej: 2026-05-31T08:00:00)
+        horaExacta = fecha_carga.split('T')[1].substring(0, 5);
+    } else if (fecha_carga && fecha_carga.includes(' ')) {
+        // Si viene en formato plano (Ej: 2026-05-31 08:00:00)
+        horaExacta = fecha_carga.split(' ')[1].substring(0, 5);
+    }
+
+    // Limpiamos espacios 
+    const turnoLimpio = turno ? turno.trim() : "";
+
+    console.log(`[DEBUG HORA] Turno recibido: '${turnoLimpio}' | Hora extraída: '${horaExacta}'`);
+
+    if (turnoLimpio === 'Mañana' && horaExacta !== '05:00') {
+        return res.status(400).json({ error: 'Para el turno de la Mañana, la hora de carga debe ser a las 05:00 hrs.' });
+    }
+    if (turnoLimpio === 'Tarde' && horaExacta !== '13:00') {
+        return res.status(400).json({ error: 'Para el turno de la Tarde, la hora de carga debe ser a las 13:00 hrs.' });
+    }
+    if (turnoLimpio === 'Noche' && horaExacta !== '20:20') {
+        return res.status(400).json({ error: 'Para el turno de la Noche, la hora de carga debe ser a las 20:20 hrs.' });
+    }
+    // ==========================================================
+
     const client = await pool.connect();
 
     try {
@@ -288,7 +318,7 @@ app.post('/api/nombramientos/crear', async (req, res) => {
         console.error("Error en la transaccion de guardado:", err);
         res.status(500).json({ error: 'Error en el servidor al crear el nombramiento: ' + err.message });
     } finally {
-        // Es indispensable liberar el cliente para regresarlo al pool
+    
         client.release();
     }
 });
@@ -363,6 +393,48 @@ app.put('/api/trabajadores/:num_control', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Error en el servidor al actualizar: ' + err.message });
+    }
+});
+
+// ========================================================
+// RUTA PARA EDITAR PERSONAL DE APOYO
+// ========================================================
+app.put('/api/apoyo/:id', async (req, res) => {
+    const { id } = req.params; 
+    const {
+        nombre,
+        apellido_paterno,
+        apellido_materno,
+        estatus,
+        cursos,
+        telefono,
+        correo
+    } = req.body;
+
+    try {
+   
+        const result = await pool.query(`
+            UPDATE personal_apoyo 
+            SET 
+                nombre = $1,
+                apellido_paterno = $2,
+                apellido_materno = $3,
+                estatus = $4,
+                cursos = $5,
+                telefono = $6,
+                correo = $7
+            WHERE matricula = $8
+            RETURNING *;
+        `, [nombre, apellido_paterno, apellido_materno, estatus, cursos, telefono, correo, id]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: "Personal de apoyo no encontrado en la base de datos." });
+        }
+
+        res.json({ mensaje: "Personal de apoyo modificado correctamente", apoyo: result.rows[0] });
+    } catch (err) {
+        console.error("Error al actualizar personal de apoyo:", err);
+        res.status(500).json({ error: "Error interno del servidor al actualizar" });
     }
 });
 
@@ -478,7 +550,7 @@ app.post('/api/auth/recuperar-password', async (req, res) => {
 // GUARDAR RESULTADOS DEL LLAMADO 
 // ========================================================
 app.put('/api/postulaciones/resultado', async (req, res) => {
-    const { id_nombramiento, seleccionados } = req.body;
+    const { id_nombramiento, seleccionados } = req.body; 
 
     if (!id_nombramiento) {
         return res.status(400).json({ error: 'Falta el ID del nombramiento.' });
@@ -493,7 +565,7 @@ app.put('/api/postulaciones/resultado', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 1. RECHAZAMOS A LOS QUE NO FUERON SELECCIONADOS EN ESTA RONDA (Los que siguen en Pendiente)
+        // 1. RECHAZAMOS A LOS QUE NO FUERON SELECCIONADOS EN ESTA RONDA 
         await client.query(`
             UPDATE postulaciones p
             SET resultado = 'Rechazado'
@@ -681,7 +753,8 @@ app.get('/api/nombramientos/:id_nombramiento/postulados', async (req, res) => {
             SELECT 
                 p.id_postulacion,
                 p.num_control,
-                COALESCE(u.nombre_completo, pa.nombre || ' ' || pa.apellido) AS nombre_completo,
+                -- Usamos los nuevos nombres de las columnas para armar el nombre completo
+                COALESCE(u.nombre_completo, pa.nombre || ' ' || pa.apellido_paterno || ' ' || COALESCE(pa.apellido_materno, '')) AS nombre_completo,
                 c.puesto_requerido,
                 p.fecha_postulacion,
                 p.resultado
@@ -722,7 +795,7 @@ app.delete('/api/trabajadores/:num_control', async (req, res) => {
 });
 
 // ========================================================
-// 9. ELIMINAR UN NOMBRAMIENTO Y SUS DEPENDENCIAS (OPCIÓN B)
+// 9. ELIMINAR UN NOMBRAMIENTO Y SUS DEPENDENCIAS 
 // ========================================================
 app.delete('/api/nombramientos/:id', async (req, res) => {
     const { id } = req.params;
@@ -776,7 +849,7 @@ app.put('/api/nombramientos/:id/llamado', async (req, res) => {
     const { id } = req.params;
     try {
 
-        // Adaptado a pool.query con arreglos de parámetros planos ($1)
+       
         await pool.query(
             "UPDATE nombramientos SET estado = 'Cerrada' WHERE id_nombramiento = $1",
             [id]
@@ -794,8 +867,8 @@ app.put('/api/nombramientos/:id/llamado', async (req, res) => {
 // ========================================================
 app.put('/api/nombramientos/:id/ampliar', async (req, res) => {
     const { id } = req.params;
-    const { minutos } = req.body;
-
+    const { minutos } = req.body; 
+    
     if (!minutos || isNaN(minutos)) {
         return res.status(400).json({ error: 'Debes enviar una cantidad de minutos válida.' });
     }
@@ -803,7 +876,7 @@ app.put('/api/nombramientos/:id/ampliar', async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-
+        
         // Sumar el tiempo a la fecha de cierre y asegurar que vuelva a estar 'Abierta'
         await client.query(`
             UPDATE nombramientos 
@@ -880,6 +953,67 @@ app.put('/api/postulaciones/ausente', async (req, res) => {
 app.get('/api/hora-servidor', (req, res) => {
     res.json({ hora_servidor: new Date().toISOString() });
 });
+
+// ==========================================================
+// MÓDULO DE DESTINOS / EMBARCACIONES (Punto #5)
+// ==========================================================
+
+// 1. OBTENER la lista de todos los destinos
+app.get('/api/destinos', async (req, res) => {
+    try {
+      
+        const result = await pool.query("SELECT * FROM destino ORDER BY id_destino DESC");
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error al obtener destinos:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// 2. CREAR un nuevo destino (Dar de alta)
+app.post('/api/destinos', async (req, res) => {
+    const { nombre_destino, estatus } = req.body;
+    try {
+       
+        const result = await pool.query(
+            "INSERT INTO destino (nombre_destino, estatus) VALUES ($1, $2) RETURNING *",
+            [nombre_destino, estatus || 'Activo']
+        );
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Error al insertar destino:', error);
+        res.status(500).json({ error: 'Error al registrar en la BD' });
+    }
+});
+
+// 3. ACTUALIZAR destino (Para Editar Nombre o Baja Lógica)
+app.put('/api/destinos/:id', async (req, res) => {
+    const { id } = req.params;
+    const { nombre_destino, estatus } = req.body;
+    
+    try {
+        if (nombre_destino) {
+         
+            const result = await pool.query(
+                "UPDATE destino SET nombre_destino = $1, estatus = $2 WHERE id_destino = $3 RETURNING *",
+                [nombre_destino, estatus, id]
+            );
+            res.json(result.rows[0]);
+        } else {
+       
+            const result = await pool.query(
+                "UPDATE destino SET estatus = $1 WHERE id_destino = $2 RETURNING *",
+                [estatus, id]
+            );
+            res.json(result.rows[0]);
+        }
+    } catch (error) {
+        console.error('Error al actualizar destino:', error);
+        res.status(500).json({ error: 'Error al actualizar en la BD' });
+    }
+});
+// ==========================================================
+
 
 // LEVANTAMIENTO DEL SERVIDOR
 const PORT = process.env.PORT || 5000;
