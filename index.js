@@ -309,15 +309,7 @@ app.post('/api/nombramientos/crear', async (req, res) => {
     }
 });
 
-// BORRAR DESTINO
-app.delete('/api/destinos/:id', async (req, res) => {
-    try {
-        await pool.query('DELETE FROM destino WHERE id_destino = $1', [req.params.id]);
-        res.json({ mensaje: 'Borrado' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+
 
 // 2. RUTA PARA TRAER LOS TRABAJADORES A LA TABLA REACT
 app.get('/api/trabajadores', async (req, res) => {
@@ -576,37 +568,39 @@ app.put('/api/postulaciones/resultado', async (req, res) => {
     }
 });
 
-// VER RESULTADO DEL TRABAJADOR
+// ========================================================
+// VER RESULTADO DEL TRABAJADOR (ACTUALIZADO CON DETALLES DEL BUQUE)
+// ========================================================
 app.get('/api/trabajadores/:num_control/resultado', async (req, res) => {
     const { num_control } = req.params;
 
     try {
-
-        // Se cambió SELECT TOP 1 por LIMIT 1 al final
         const result = await pool.query(`
-            SELECT resultado
-            FROM postulaciones
-            WHERE num_control = $1
-            AND resultado != 'Pendiente'
-            AND resultado != 'No seleccionado'
+            SELECT 
+                p.resultado,
+                c.puesto_requerido AS puesto,
+                n.barco,
+                n.muelle,
+                n.turno,
+                n.codigo_nombramiento
+            FROM postulaciones p
+            INNER JOIN convocatorias c ON p.id_convocatoria = c.id_convocatoria
+            INNER JOIN nombramientos n ON c.id_nombramiento = n.id_nombramiento
+            WHERE p.num_control = $1
+            AND p.resultado IN ('Aceptado', 'Llamado', 'Asignado')
+            ORDER BY p.id_postulacion DESC
             LIMIT 1
         `, [num_control]);
 
         if (result.rows.length === 0) {
-            return res.json({
-                resultado: null
-            });
+            return res.json({ resultado: null });
         }
 
-        res.json({
-            resultado: result.rows[0].resultado
-        });
+        res.json(result.rows[0]);
 
     } catch (err) {
-        console.error(err);
-        res.status(500).json({
-            error: 'Error obteniendo resultado'
-        });
+        console.error("Error obteniendo resultado:", err);
+        res.status(500).json({ error: 'Error obteniendo resultado' });
     }
 });
 
@@ -928,12 +922,38 @@ app.get('/api/hora-servidor', (req, res) => {
 
 app.get('/api/destinos', async (req, res) => {
     try {
-        // Consultamos directamente la tabla que vimos en tu captura
-        const result = await pool.query('SELECT nombre_destino FROM destino');
+        // Ahora traemos todo (incluyendo el id_destino) ordenado del más nuevo al más viejo
+        const result = await pool.query('SELECT * FROM destino ORDER BY id_destino DESC');
         res.json(result.rows);
     } catch (err) {
         console.error("Error en destinos:", err);
         res.status(500).json({ error: 'Error al traer los destinos' });
+    }
+});
+// BORRAR DESTINO
+app.delete('/api/destinos/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM destino WHERE id_destino = $1', [req.params.id]);
+        res.json({ mensaje: 'Borrado' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==========================================================
+// CREAR un nuevo destino (Dar de alta Buque/Área)
+// ==========================================================
+app.post('/api/destinos', async (req, res) => {
+    const { nombre } = req.body;
+    try {
+        const result = await pool.query(
+            "INSERT INTO destino (nombre_destino, estatus) VALUES ($1, 'Activo') RETURNING id_destino, nombre_destino",
+            [nombre]
+        );
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Error al insertar destino:', error);
+        res.status(500).json({ error: 'Error al registrar en la BD' });
     }
 });
 
